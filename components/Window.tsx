@@ -1,98 +1,69 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, ReactPropTypes } from "react";
 import Script from "next/script";
-import dynamic from "next/dynamic";
 import { Console, lineOutput } from "../components/Console";
+import { Editor } from "../components/Editor";
 import CommandButton from "../components/CommandButton";
 import { PlayArrow, Delete, HourglassEmpty } from "@mui/icons-material";
-import { python } from "@codemirror/lang-python";
-import { EditorState, EditorView, basicSetup } from "@codemirror/basic-setup";
-import { oneDark } from "@codemirror/theme-one-dark";
 
-const Window = ({ precode }: any) => {
-  const [code, setcode] = useState(precode);
-  const [output, setoutput] = useState([]);
-  const [hasInput, setHasInput] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [time, setTime] = useState("");
-  const [editor, setEditor] = useState(null);
+interface WindowProps {
+  precode: string;
+}
 
-  const refEditor = useRef(null);
-  const refInput = useRef(null);
+const Window = (props: WindowProps) => {
+  const [running, setRunning] = useState<boolean>(false);
+  const [time, setTime] = useState<String>("");
+
+  const refEditor = useRef<Editor>(null);
+  const refConsole = useRef<Console>(null);
 
   useEffect(() => {
-    //@ts-ignore
-    setEditor(() => {
-      return new EditorView({
-        state: EditorState.create({
-          extensions: [python(), basicSetup, oneDark],
-          doc: code,
-        }),
-        //@ts-ignore
-        parent: refEditor.current,
-      });
-    });
+    refEditor.current?.initCode(props.precode);
   }, []);
 
-  const sendInput = async (e: any) => {
-    setHasInput(true);
-    return await new Promise<void>((resolve) => {
-      //@ts-ignore
-      refInput.current.onkeydown = (e: any) => {
-        if (e.keyCode === 13) {
-          e.preventDefault();
-          resolve(e.target.value);
-        }
-      };
-    });
-  };
-
   const clear = () => {
-    setoutput([]);
+    refConsole.current?.clearOutput();
     setRunning(false);
-    setcode("");
+    refEditor.current?.setCode("");
   };
 
   const run = () => {
-    //@ts-ignore
-    const str = editor.state.doc.toString();
-    setoutput([]);
-    setcode(str);
+    const str = refEditor.current?.getCode() || "";
+    refConsole.current?.clearOutput();
     runPythonCode(str);
   };
 
   const runPythonCode = async (str: string) => {
     setRunning(true);
+
     //@ts-ignore
     const runner = new BrythonRunner({
       stdout: {
         write: (content: string) => {
-          //@ts-ignore
-          setoutput((i) => {
-            return [...i, new lineOutput(content, "stdout")];
-          });
+          refConsole.current?.addOutput(new lineOutput(content, "stdout"));
         },
         flush: () => {},
       },
       stderr: {
         write: (content: string) => {
-          //@ts-ignore
-          setoutput((i) => {
-            return [...i, new lineOutput(content, "stderr")];
-          });
+          refConsole.current?.addOutput(new lineOutput(content, "stderr"));
         },
         flush: () => {},
       },
       stdin: {
         async readline() {
-          //@ts-ignore
-          const consoleInput = await sendInput();
-          setHasInput(false);
-          //@ts-ignore
-          setoutput((i) => {
-            //@ts-ignore
-            return [...i, new lineOutput(consoleInput, "stdout")];
-          });
-          return consoleInput;
+          refConsole.current?.setHasInput(true);
+          const consoleInput = await refConsole.current?.getInput();
+          refConsole.current?.setHasInput(false);
+          if (consoleInput == undefined) {
+            refConsole.current?.addOutput(
+              new lineOutput("There is an error on the input", "stderr")
+            );
+          } else {
+            refConsole.current?.addOutput(
+              new lineOutput(consoleInput, "stdout")
+            );
+            return consoleInput;
+          }
         },
       },
     });
@@ -109,7 +80,7 @@ const Window = ({ precode }: any) => {
         strategy="beforeInteractive"
         src="/statics/brython-runner.bundle.js"
       />
-      <div className="editor" ref={refEditor}></div>
+      <Editor ref={refEditor} />
       <div className="commands">
         <CommandButton
           run={run}
@@ -120,7 +91,7 @@ const Window = ({ precode }: any) => {
         <CommandButton run={clear} Icon={Delete} color={"#ffa500"} />
         <p>{time}</p>
       </div>
-      <Console output={output} hasInput={hasInput} refInput={refInput} />
+      <Console ref={refConsole} />
     </div>
   );
 };
